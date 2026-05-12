@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using TargetScoreScanner.Services;
 
 namespace TargetScoreScanner
 {
@@ -15,6 +16,7 @@ namespace TargetScoreScanner
                 });
 
             builder.Services.AddMauiBlazorWebView();
+            builder.Services.AddSingleton<ImageComparisonService>();
 
 #if DEBUG
     		builder.Services.AddBlazorWebViewDeveloperTools();

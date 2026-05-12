@@ -1,11 +1,170 @@
 ﻿@page "/"
-<table style="width: 100%;height: 97vh;overflow: hidden;">
-    <tr>
-        <td style="width:50%;text-align: center;">
-            <img src="images/TargetPaper.png" style="height: 90vh;" />
-        </td>
-        <td style="width:50%;text-align: center;">
-            <img src="images/TargetPaperHit.png" style="height: 90vh;" />
-        </td>
-    </tr>
-</table>
+@using TargetScoreScanner.Services
+@using SharpImage = SixLabors.ImageSharp.Image
+@inject ImageComparisonService ComparisonService
+
+<div style="display:flex; flex-direction:column; height:97vh; overflow:hidden;">
+
+    <!-- Images row -->
+    <div style="display:flex; flex:1; overflow:hidden;">
+
+        <!-- Left image (reference) -->
+        <div style="width:50%; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;">
+            <img id="img1" src="images/TargetPaper.png" style="height:90vh; display:block;"
+                 @ref="_imgRef1" />
+            @if (_imageWidth > 0)
+            {
+                @foreach (var pt in _discrepancies)
+                {
+                    <span style="position:absolute;
+                                 left:@(pt.X / (double)_imageWidth * 100)%;
+                                 top:@(pt.Y / (double)_imageHeight * 100)%;
+                                 width:8px; height:8px;
+                                 background:red; border-radius:50%;
+                                 transform:translate(-50%,-50%);
+                                 pointer-events:none;" />
+                }
+            }
+        </div>
+
+        <!-- Right image (modified) -->
+        <div style="width:50%; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;">
+            <img id="img2" src="images/TargetPaperHit.png" style="height:90vh; display:block;" />
+            @if (_imageWidth > 0)
+            {
+                @foreach (var pt in _discrepancies)
+                {
+                    <span style="position:absolute;
+                                 left:@(pt.X / (double)_imageWidth * 100)%;
+                                 top:@(pt.Y / (double)_imageHeight * 100)%;
+                                 width:8px; height:8px;
+                                 background:red; border-radius:50%;
+                                 transform:translate(-50%,-50%);
+                                 pointer-events:none;" />
+                }
+            }
+        </div>
+    </div>
+
+    <!-- Toolbar row -->
+    <div style="display:flex; align-items:center; justify-content:center; gap:16px; padding:8px;">
+        <button @onclick="CompareImages"
+                disabled="@_isComparing"
+                style="padding:8px 24px; font-size:1rem; cursor:pointer;">
+            @(_isComparing ? "Comparing…" : "Compare Images")
+        </button>
+
+        @if (_errorMessage is not null)
+        {
+            <span style="color:orange;">@_errorMessage</span>
+        }
+        else if (_discrepancies.Length > 0)
+        {
+            <span style="color:red; font-weight:bold;">
+                @_discrepancies.Length discrepanc@(_discrepancies.Length == 1 ? "y" : "ies") found
+            </span>
+        }
+        else if (_compareRan)
+        {
+            <span style="color:green; font-weight:bold;">No discrepancies found ✓</span>
+        }
+    </div>
+
+    <!-- Coordinates table (shown only when discrepancies exist) -->
+    @if (_discrepancies.Length > 0)
+    {
+        <div style="overflow-y:auto; max-height:20vh; padding:0 12px 8px;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                <thead>
+                    <tr style="background:#f0f0f0;">
+                        <th style="border:1px solid #ccc; padding:4px 8px;">#</th>
+                        <th style="border:1px solid #ccc; padding:4px 8px;">X</th>
+                        <th style="border:1px solid #ccc; padding:4px 8px;">Y</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < _discrepancies.Length; i++)
+                    {
+                        var pt = _discrepancies[i];
+                        <tr>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">@(i + 1)</td>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">@pt.X</td>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">@pt.Y</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    // -----------------------------------------------------------------------
+    // Fields
+    // -----------------------------------------------------------------------
+    private string Image1FileName = AppContext.BaseDirectory + "wwwroot/images/TargetPaper.png";
+    private string Image2FileName = AppContext.BaseDirectory + "wwwroot/images/TargetPaperHit.png";
+
+    private System.Drawing.Point[] _discrepancies = [];
+    private int    _imageWidth    = 0;
+    private int    _imageHeight   = 0;
+    private bool   _isComparing   = false;
+    private bool   _compareRan    = false;
+    private string? _errorMessage = null;
+
+    private ElementReference _imgRef1;
+
+    // -----------------------------------------------------------------------
+    // Compare button handler
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Loads both images from the app's wwwroot bundle via <see cref="FileSystem.OpenAppPackageFileAsync"/>
+    /// and runs a pure C# pixel-by-pixel comparison using SixLabors.ImageSharp.
+    /// Returns an array of (X, Y) coordinates where the images differ beyond the colour threshold.
+    /// </summary>
+    private async Task CompareImages()
+    {
+        _isComparing   = true;
+        _compareRan    = false;
+        _errorMessage  = null;
+        _discrepancies = [];
+        StateHasChanged();
+
+        try
+        {
+            await using Stream stream1 = await FileSystem.OpenAppPackageFileAsync(Image1FileName);
+            await using Stream stream2 = await FileSystem.OpenAppPackageFileAsync(Image2FileName);
+
+            // Run CPU-bound comparison on a background thread so the UI stays responsive
+            var result = await Task.Run(() =>
+                ComparisonService.Compare(
+                    stream1,
+                    stream2,
+                    colorThreshold: 30,
+                    sampleStep: 2));
+
+            _discrepancies = result;
+
+            // Cache image dimensions for overlay positioning
+            if (result.Length > 0 || _imageWidth == 0)
+            {
+                await using Stream dimStream = await FileSystem.OpenAppPackageFileAsync(Image1FileName);
+                using var tempImg = SixLabors.ImageSharp.Image.Load(dimStream);
+                _imageWidth  = tempImg.Width;
+                _imageHeight = tempImg.Height;
+            }
+
+            _compareRan = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _isComparing = false;
+            StateHasChanged();
+        }
+    }
+}
