@@ -30,7 +30,7 @@
 
         <!-- Right image (modified) -->
         <div style="width:50%; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;">
-            <img id="img2" src="images/TargetPaperHit2.png" style="height:90vh; display:block;" />
+            <img id="img2" src="@_image2Src" style="height:90vh; display:block;" />
             @if (_imageWidth > 0)
             {
                 @foreach (var pt in _discrepancies)
@@ -55,6 +55,11 @@
             @(_isComparing ? "Comparing…" : "Compare Images")
         </button>
 
+        <button @onclick="PickTargetImage"
+                disabled="@_isPickingImage"
+                style="padding:8px 24px; font-size:1rem; cursor:pointer;">
+            @(_isPickingImage ? "Picking…" : "Change Target Image")
+        </button>
         @if (_errorMessage is not null)
         {
             <span style="color:orange;">@_errorMessage</span>
@@ -166,12 +171,20 @@
     // Fields
     // -----------------------------------------------------------------------
     private string Image1FileName = AppContext.BaseDirectory + "wwwroot/images/TargetPaper.png";
-    private string Image2FileName = AppContext.BaseDirectory + "wwwroot/images/TargetPaperHit2.png";
+
+    // When null, the bundled default is used; when set, points to a user-picked file on disk.
+    private string? _pickedImage2Path = null;
+    private string  Image2FileName   => _pickedImage2Path
+                                        ?? AppContext.BaseDirectory + "wwwroot/images/TargetPaperHit2.png";
+
+    // Displayed src for the right image: base64 data URI after pick, otherwise the bundled path.
+    private string _image2Src = "images/TargetPaperHit2.png";
 
     private System.Drawing.Point[] _discrepancies = [];
     private int    _imageWidth    = 0;
     private int    _imageHeight   = 0;
     private bool   _isComparing   = false;
+    private bool   _isPickingImage = false;
     private bool   _compareRan    = false;
     private string? _errorMessage = null;
     private MultiHitResult? _scoreResult = null;
@@ -199,7 +212,10 @@
         try
         {
             await using Stream stream1 = await FileSystem.OpenAppPackageFileAsync(Image1FileName);
-            await using Stream stream2 = await FileSystem.OpenAppPackageFileAsync(Image2FileName);
+            // Image2 is either a bundled asset or a user-picked file on disk — open accordingly.
+            await using Stream stream2 = _pickedImage2Path is not null
+                ? File.OpenRead(_pickedImage2Path)
+                : await FileSystem.OpenAppPackageFileAsync(Image2FileName);
 
             // Run CPU-bound comparison on a background thread so the UI stays responsive
             var result = await Task.Run(() =>
@@ -232,6 +248,60 @@
         finally
         {
             _isComparing = false;
+            StateHasChanged();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Pick image handler
+    // -----------------------------------------------------------------------
+
+    private async Task PickTargetImage()
+    {
+        _isPickingImage = true;
+        _errorMessage   = null;
+        StateHasChanged();
+
+        try
+        {
+            var options = new PickOptions
+            {
+                PickerTitle   = "Select target image",
+                FileTypes     = new FilePickerFileType(new Dictionary<DevicePlatform, IEnumerable<string>>
+                {
+                    { DevicePlatform.Android, ["image/jpeg", "image/png"] },
+                    { DevicePlatform.iOS,     ["public.image"] },
+                    { DevicePlatform.WinUI,   [".png", ".jpg", ".jpeg", ".bmp", ".tiff"] },
+                    { DevicePlatform.macOS,   ["public.image"] },
+                }),
+            };
+
+            var file = await FilePicker.Default.PickAsync(options);
+            if (file is null)
+                return;   // user cancelled
+
+            _pickedImage2Path = file.FullPath;
+
+            // Build a base64 data URI so the <img> can display a file outside wwwroot.
+            await using var fs = File.OpenRead(file.FullPath);
+            var bytes = new byte[fs.Length];
+            _ = await fs.ReadAsync(bytes);
+            string mime = file.FileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+                          ? "image/png" : "image/jpeg";
+            _image2Src = $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+
+            // Reset previous results so the user knows a fresh compare is needed.
+            _discrepancies = [];
+            _scoreResult   = null;
+            _compareRan    = false;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Could not load image: {ex.Message}";
+        }
+        finally
+        {
+            _isPickingImage = false;
             StateHasChanged();
         }
     }
