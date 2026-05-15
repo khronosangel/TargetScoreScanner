@@ -2,6 +2,7 @@
 @using TargetScoreScanner.Services
 @using SharpImage = SixLabors.ImageSharp.Image
 @inject ImageComparisonService ComparisonService
+@inject ScoringService ScoringService
 
 <div style="display:flex; flex-direction:column; height:97vh; overflow:hidden;">
 
@@ -16,31 +17,31 @@
             {
                 @foreach (var pt in _discrepancies)
                 {
-                    <span style="position:absolute;
+                    @* <span style="position:absolute;
                                  left:@(pt.X / (double)_imageWidth * 100)%;
                                  top:@(pt.Y / (double)_imageHeight * 100)%;
                                  width:8px; height:8px;
                                  background:red; border-radius:50%;
                                  transform:translate(-50%,-50%);
-                                 pointer-events:none;" />
+                                 pointer-events:none;" /> *@
                 }
             }
         </div>
 
         <!-- Right image (modified) -->
         <div style="width:50%; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;">
-            <img id="img2" src="images/TargetPaperHit.png" style="height:90vh; display:block;" />
+            <img id="img2" src="images/TargetPaperHit2.png" style="height:90vh; display:block;" />
             @if (_imageWidth > 0)
             {
                 @foreach (var pt in _discrepancies)
                 {
-                    <span style="position:absolute;
+                    @* <span style="position:absolute;
                                  left:@(pt.X / (double)_imageWidth * 100)%;
                                  top:@(pt.Y / (double)_imageHeight * 100)%;
                                  width:8px; height:8px;
                                  background:red; border-radius:50%;
                                  transform:translate(-50%,-50%);
-                                 pointer-events:none;" />
+                                 pointer-events:none;" /> *@
                 }
             }
         </div>
@@ -60,20 +61,82 @@
         }
         else if (_discrepancies.Length > 0)
         {
-            <span style="color:red; font-weight:bold;">
+            @* <span style="color:red; font-weight:bold;">
                 @_discrepancies.Length discrepanc@(_discrepancies.Length == 1 ? "y" : "ies") found
-            </span>
+            </span> *@
         }
         else if (_compareRan)
         {
-            <span style="color:green; font-weight:bold;">No discrepancies found ✓</span>
+            @* <span style="color:green; font-weight:bold;">No discrepancies found ✓</span> *@
         }
     </div>
+
+    <!-- Score display (shown only after hits are detected) -->
+    @if (_scoreResult is not null && _scoreResult.Hits.Count > 0)
+    {
+        <div style="overflow-y:auto; max-height:40vh; padding:0 12px 8px;">
+
+            <!-- Per-hit table -->
+            <table style="width:100%; border-collapse:collapse; font-size:0.85rem; margin-bottom:6px;">
+                <thead>
+                    <tr style="background:#f0f0f0;">
+                        <th style="border:1px solid #ccc; padding:4px 8px;">Hit #</th>
+                        <th style="border:1px solid #ccc; padding:4px 8px;">Centroid (X, Y)</th>
+                        <th style="border:1px solid #ccc; padding:4px 8px;">Dist (px)</th>
+                        <th style="border:1px solid #ccc; padding:4px 8px;">Norm %</th>
+                        <th style="border:1px solid #ccc; padding:4px 8px;">Zone</th>
+                        <th style="border:1px solid #ccc; padding:4px 8px;">Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (int i = 0; i < _scoreResult.Hits.Count; i++)
+                    {
+                        var h = _scoreResult.Hits[i];
+                        <tr>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">@(i + 1)</td>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">(@h.HitX, @h.HitY)</td>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">@h.Distance</td>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">@((h.NormalisedDistance * 100).ToString("F1"))%</td>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center;">@ScoreLabel(h.Score)</td>
+                            <td style="border:1px solid #ccc; padding:4px 8px; text-align:center; font-weight:bold; color:@ScoreColor(h.Score);">@h.Score</td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr style="background:#f0f0f0; font-weight:bold;">
+                        <td colspan="5" style="border:1px solid #ccc; padding:4px 8px; text-align:right;">Total Score</td>
+                        <td style="border:1px solid #ccc; padding:4px 8px; text-align:center; color:@ScoreColor((int)Math.Round(_scoreResult.TotalScore / (double)_scoreResult.Hits.Count));">
+                            @_scoreResult.TotalScore / @(_scoreResult.Hits.Count * 10)
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <!-- SVG ring diagram — one marker per hit -->
+            <div style="display:flex; justify-content:center; padding-top:4px;">
+                <svg width="160" height="160" viewBox="0 0 160 160">
+                    @for (int ring = 1; ring <= 10; ring++)
+                    {
+                        double r = ring * 7.0;
+                        <circle cx="80" cy="80" r="@r" fill="none"
+                                stroke="#bbb" stroke-width="0.8" />
+                    }
+                    @foreach (var h in _scoreResult.Hits)
+                    {
+                        double mx = h.HitX / (double)_imageWidth  * 160;
+                        double my = h.HitY / (double)_imageHeight * 160;
+                        <circle cx="@mx" cy="@my" r="4"
+                                fill="@ScoreColor(h.Score)" stroke="white" stroke-width="1" />
+                    }
+                </svg>
+            </div>
+        </div>
+    }
 
     <!-- Coordinates table (shown only when discrepancies exist) -->
     @if (_discrepancies.Length > 0)
     {
-        <div style="overflow-y:auto; max-height:20vh; padding:0 12px 8px;">
+        @* <div style="overflow-y:auto; max-height:20vh; padding:0 12px 8px;">
             <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
                 <thead>
                     <tr style="background:#f0f0f0;">
@@ -94,7 +157,7 @@
                     }
                 </tbody>
             </table>
-        </div>
+        </div> *@
     }
 </div>
 
@@ -103,7 +166,7 @@
     // Fields
     // -----------------------------------------------------------------------
     private string Image1FileName = AppContext.BaseDirectory + "wwwroot/images/TargetPaper.png";
-    private string Image2FileName = AppContext.BaseDirectory + "wwwroot/images/TargetPaperHit.png";
+    private string Image2FileName = AppContext.BaseDirectory + "wwwroot/images/TargetPaperHit2.png";
 
     private System.Drawing.Point[] _discrepancies = [];
     private int    _imageWidth    = 0;
@@ -111,6 +174,7 @@
     private bool   _isComparing   = false;
     private bool   _compareRan    = false;
     private string? _errorMessage = null;
+    private MultiHitResult? _scoreResult = null;
 
     private ElementReference _imgRef1;
 
@@ -129,6 +193,7 @@
         _compareRan    = false;
         _errorMessage  = null;
         _discrepancies = [];
+        _scoreResult   = null;
         StateHasChanged();
 
         try
@@ -155,6 +220,9 @@
                 _imageHeight = tempImg.Height;
             }
 
+            // Compute circular ring score from the hit centroid
+            _scoreResult = ScoringService.Calculate(result, _imageWidth, _imageHeight);
+
             _compareRan = true;
         }
         catch (Exception ex)
@@ -167,4 +235,36 @@
             StateHasChanged();
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Score helpers
+    // -----------------------------------------------------------------------
+
+    private static string ScoreColor(int score) => score switch
+    {
+        10    => "#FFD700",   // gold  – bull's-eye
+        9     => "#FF8C00",   // dark orange
+        8     => "#FF4500",   // orange-red
+        7     => "#DC143C",   // crimson
+        6     => "#9400D3",   // violet
+        5     => "#0000FF",   // blue
+        4     => "#008000",   // green
+        3     => "#20B2AA",   // light sea green
+        2     => "#708090",   // slate grey
+        _     => "#A9A9A9",   // dark grey – miss / 1
+    };
+
+    private static string ScoreLabel(int score) => score switch
+    {
+        10 => "Bull's-Eye 🎯",
+        9  => "Inner Gold",
+        8  => "Red",
+        7  => "Inner Red",
+        6  => "Blue",
+        5  => "Inner Blue",
+        4  => "Black",
+        3  => "Inner Black",
+        2  => "White",
+        _  => "Miss / Edge",
+    };
 }

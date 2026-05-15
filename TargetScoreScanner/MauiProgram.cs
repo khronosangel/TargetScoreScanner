@@ -17,6 +17,7 @@ namespace TargetScoreScanner
 
             builder.Services.AddMauiBlazorWebView();
             builder.Services.AddSingleton<ImageComparisonService>();
+            builder.Services.AddSingleton<ScoringService>();
 
 #if DEBUG
     		builder.Services.AddBlazorWebViewDeveloperTools();
