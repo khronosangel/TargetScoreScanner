@@ -60,6 +60,12 @@
                 style="padding:8px 24px; font-size:1rem; cursor:pointer;">
             @(_isPickingImage ? "Picking…" : "Change Target Image")
         </button>
+
+        <button @onclick="OpenCamera"
+                disabled="@_isCapturing"
+                style="padding:8px 24px; font-size:1rem; cursor:pointer;">
+            @(_isCapturing ? "Capturing…" : "Open Camera")
+        </button>
         @if (_errorMessage is not null)
         {
             <span style="color:orange;">@_errorMessage</span>
@@ -185,6 +191,7 @@
     private int    _imageHeight   = 0;
     private bool   _isComparing   = false;
     private bool   _isPickingImage = false;
+    private bool   _isCapturing   = false;
     private bool   _compareRan    = false;
     private string? _errorMessage = null;
     private MultiHitResult? _scoreResult = null;
@@ -248,6 +255,55 @@
         finally
         {
             _isComparing = false;
+            StateHasChanged();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Camera capture handler
+    // -----------------------------------------------------------------------
+
+    private async Task OpenCamera()
+    {
+        if (!MediaPicker.Default.IsCaptureSupported)
+        {
+            _errorMessage = "Camera capture is not supported on this device.";
+            StateHasChanged();
+            return;
+        }
+
+        _isCapturing  = true;
+        _errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var photo = await MediaPicker.Default.CapturePhotoAsync();
+            if (photo is null)
+                return;   // user cancelled
+
+            _pickedImage2Path = photo.FullPath;
+
+            // Build a base64 data URI so the <img> can display the captured file.
+            await using var fs = File.OpenRead(photo.FullPath);
+            var bytes = new byte[fs.Length];
+            _ = await fs.ReadAsync(bytes);
+            string mime = photo.FileName.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+                          ? "image/png" : "image/jpeg";
+            _image2Src = $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+
+            // Reset previous results so the user knows a fresh compare is needed.
+            _discrepancies = [];
+            _scoreResult   = null;
+            _compareRan    = false;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Camera error: {ex.Message}";
+        }
+        finally
+        {
+            _isCapturing = false;
             StateHasChanged();
         }
     }
